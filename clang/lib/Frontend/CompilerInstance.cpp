@@ -1246,6 +1246,10 @@ compileModuleImpl(CompilerInstance &ImportingInstance, SourceLocation ImportLoc,
   SourceMgr.pushModuleBuildStack(ModuleName,
     FullSourceLoc(ImportLoc, ImportingInstance.getSourceManager()));
 
+  // Pass along the GenModuleActionWrapper callback
+  auto WrapGenModuleAction = ImportingInstance.getGenModuleActionWrapper();
+  Instance.setGenModuleActionWrapper(WrapGenModuleAction);
+
   // Share an output manager.
   assert(ImportingInstance.hasOutputBackend() &&
          "Expected an output manager to already be set up");
@@ -1267,8 +1271,11 @@ compileModuleImpl(CompilerInstance &ImportingInstance, SourceLocation ImportLoc,
   // thread so that we get a stack large enough.
   bool Crashed = !llvm::CrashRecoveryContext().RunSafelyOnThread(
       [&]() {
-        GenerateModuleFromModuleMapAction Action;
-        Instance.ExecuteAction(Action);
+        std::unique_ptr<FrontendAction> Action(
+            new GenerateModuleFromModuleMapAction);
+        if (WrapGenModuleAction)
+          Action = WrapGenModuleAction(FrontendOpts, std::move(Action));
+        Instance.ExecuteAction(*Action);
       },
       DesiredStackSize);
 
