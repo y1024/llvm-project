@@ -17,6 +17,7 @@
 #include "lldb/Host/windows/HostProcessWindows.h"
 #include "lldb/Host/windows/HostThreadWindows.h"
 #include "lldb/Host/windows/LazyImport.h"
+#include "lldb/Host/windows/PathUtils.h"
 #include "lldb/Host/windows/ProcessLauncherWindows.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Utility/FileSpec.h"
@@ -285,6 +286,7 @@ void DebuggerThread::DebugLoop() {
     if (wait_result) {
       DWORD continue_status = DBG_CONTINUE;
       bool shutting_down = m_is_shutting_down;
+      HANDLE exited_process = nullptr;
       switch (dbe.dwDebugEventCode) {
       default:
         llvm_unreachable("Unhandled debug event code!");
@@ -312,8 +314,11 @@ void DebuggerThread::DebugLoop() {
             HandleExitThreadEvent(dbe.u.ExitThread, dbe.dwThreadId);
         break;
       case EXIT_PROCESS_DEBUG_EVENT:
-        continue_status =
-            HandleExitProcessEvent(dbe.u.ExitProcess, dbe.dwThreadId);
+        if (!::DuplicateHandle(::GetCurrentProcess(),
+                               m_process.GetNativeProcess().GetSystemHandle(),
+                               ::GetCurrentProcess(), &exited_process,
+                               SYNCHRONIZE, FALSE, 0))
+          exited_process = nullptr;
         should_debug = false;
         break;
       case LOAD_DLL_DEBUG_EVENT:
@@ -338,6 +343,14 @@ void DebuggerThread::DebugLoop() {
           ::GetCurrentThreadId());
 
       ::ContinueDebugEvent(dbe.dwProcessId, dbe.dwThreadId, continue_status);
+
+      if (dbe.dwDebugEventCode == EXIT_PROCESS_DEBUG_EVENT) {
+        if (exited_process) {
+          ::WaitForSingleObject(exited_process, INFINITE);
+          ::CloseHandle(exited_process);
+        }
+        HandleExitProcessEvent(dbe.u.ExitProcess, dbe.dwThreadId);
+      }
 
       // We have to DebugActiveProcessStop after ContinueDebugEvent, otherwise
       // the target process will crash
@@ -495,11 +508,7 @@ static std::optional<std::string> GetImagePathFromPEB(HANDLE process) {
   if (!llvm::convertWideToUTF8(wpath, path))
     return std::nullopt;
   // A process launched through an extended-length path has the "\\?\" prefix.
-  llvm::StringRef path_ref = path;
-  if (path_ref.consume_front("\\\\?\\UNC\\"))
-    return "\\\\" + path_ref.str();
-  path_ref.consume_front("\\\\?\\");
-  return path_ref.str();
+  return StripExtendedLengthPrefix(path);
 }
 
 DWORD
@@ -808,11 +817,8 @@ DebuggerThread::HandleLoadDllEvent(const LOAD_DLL_DEBUG_INFO &info,
     loader_path.reset();
   if (!loader_path)
     loader_path = GetLoaderModuleName(process, info.lpBaseOfDll);
-  if (loader_path) {
-    llvm::StringRef path_ref = *loader_path;
-    path_ref.consume_front("\\\\?\\");
-    loader_path = path_ref.str();
-  }
+  if (loader_path)
+    loader_path = StripExtendedLengthPrefix(*loader_path);
 
   // The file handle gives the resolved path, with the on-disk case.
   std::optional<std::string> file_path;
@@ -826,9 +832,7 @@ DebuggerThread::HandleLoadDllEvent(const LOAD_DLL_DEBUG_INFO &info,
                                 VOLUME_NAME_DOS);
       std::string path_str_utf8;
       llvm::convertWideToUTF8(buffer.data(), path_str_utf8);
-      llvm::StringRef path_str = path_str_utf8;
-      path_str.consume_front("\\\\?\\");
-      file_path = path_str.str();
+      file_path = StripExtendedLengthPrefix(path_str_utf8);
     } else {
       file_path = GetFileNameFromHandleFallback(info.hFile);
     }

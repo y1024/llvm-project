@@ -2824,6 +2824,7 @@ public:
   // TO_UPSTREAM(BoundsSafety)
   bool isPointerTypeWithBounds() const;         // BoundsSafety __indexable or __bidi_indexable
   bool isTypedefNameType() const;               // typedef or alias template
+  bool isMetaInfoType() const;                  // C++26 std::meta::info
 
 #define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
   bool is##Id##Type() const;
@@ -2850,8 +2851,11 @@ public:
 
 #define HLSL_INTANGIBLE_TYPE(Name, Id, SingletonId) bool is##Id##Type() const;
 #include "clang/Basic/HLSLIntangibleTypes.def"
+#define HLSL_PACKED_TYPE(Name, Id, SingletonId) bool is##Id##Type() const;
+#include "clang/Basic/HLSLPackedTypes.def"
   bool isHLSLSpecificType() const; // Any HLSL specific type
   bool isHLSLBuiltinIntangibleType() const; // Any HLSL builtin intangible type
+  bool isHLSLBuiltinPackedType() const;
   bool isHLSLAttributedResourceType() const;
   bool isHLSLInlineSpirvType() const;
   bool isHLSLResourceRecord() const;
@@ -3329,6 +3333,9 @@ public:
 // HLSL intangible Types
 #define HLSL_INTANGIBLE_TYPE(Name, Id, SingletonId) Id,
 #include "clang/Basic/HLSLIntangibleTypes.def"
+// HLSL packed types
+#define HLSL_PACKED_TYPE(Name, Id, SingletonId) Id,
+#include "clang/Basic/HLSLPackedTypes.def"
 // SPIRV types
 #define SPIRV_TYPE(Name, Id, SingletonId) Id,
 #include "clang/Basic/SPIRVTypes.def"
@@ -9462,6 +9469,12 @@ inline bool Type::isOpenCLSpecificType() const {
   }
 #include "clang/Basic/HLSLIntangibleTypes.def"
 
+#define HLSL_PACKED_TYPE(Name, Id, SingletonId)                                \
+  inline bool Type::is##Id##Type() const {                                     \
+    return isSpecificBuiltinType(BuiltinType::Id);                             \
+  }
+#include "clang/Basic/HLSLPackedTypes.def"
+
 #define SPIRV_TYPE(Name, Id, SingletonId)                                      \
   inline bool Type::is##Id##Type() const {                                     \
     return isSpecificBuiltinType(BuiltinType::Id);                             \
@@ -9475,9 +9488,16 @@ inline bool Type::isHLSLBuiltinIntangibleType() const {
       false;
 }
 
+inline bool Type::isHLSLBuiltinPackedType() const {
+#define HLSL_PACKED_TYPE(Name, Id, SingletonId) is##Id##Type() ||
+  return
+#include "clang/Basic/HLSLPackedTypes.def"
+      false;
+}
+
 inline bool Type::isHLSLSpecificType() const {
   return isHLSLBuiltinIntangibleType() || isHLSLAttributedResourceType() ||
-         isHLSLInlineSpirvType();
+         isHLSLInlineSpirvType() || isHLSLBuiltinPackedType();
 }
 
 inline bool Type::isHLSLAttributedResourceType() const {
@@ -9525,6 +9545,10 @@ inline bool Type::isNonOverloadPlaceholderType() const {
 
 inline bool Type::isVoidType() const {
   return isSpecificBuiltinType(BuiltinType::Void);
+}
+
+inline bool Type::isMetaInfoType() const {
+  return isSpecificBuiltinType(BuiltinType::MetaInfo);
 }
 
 inline bool Type::isHalfType() const {

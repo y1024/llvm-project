@@ -44,7 +44,7 @@ namespace serialization {
 /// Version 4 of AST files also requires that the version control branch and
 /// revision match exactly, since there is no backward compatibility of
 /// AST files at this time.
-const unsigned VERSION_MAJOR = 39;
+const unsigned VERSION_MAJOR = 40;
 
 /// AST file minor version number supported by this version of
 /// Clang.
@@ -755,8 +755,11 @@ enum ASTRecordTypes {
   /// file, and for each module the relative bit offset into the stream.
   SUBMODULE_METADATA = 80,
 
+  /// Record code for the OpenMP 'requires' directives seen in the TU.
+  OMP_REQUIRES_DECLS = 81,
+
   /// Record code for availability domain table.
-  AVAILABILITY_DOMAIN_TABLE = 81,
+  AVAILABILITY_DOMAIN_TABLE = 82,
 };
 
 /// Record types used within a source manager block.
@@ -1164,9 +1167,15 @@ enum PredefinedTypeIDs {
 // \brief HLSL intangible types with auto numeration
 #define HLSL_INTANGIBLE_TYPE(Name, Id, SingletonId) PREDEF_TYPE_##Id##_ID,
 #include "clang/Basic/HLSLIntangibleTypes.def"
+// \brief HLSL packed types with auto numeration
+#define HLSL_PACKED_TYPE(Name, Id, SingletonId) PREDEF_TYPE_##Id##_ID,
+#include "clang/Basic/HLSLPackedTypes.def"
 // \brief SPIR-V types with auto numeration
 #define SPIRV_TYPE(Name, Id, SingletonId) PREDEF_TYPE_##Id##_ID,
 #include "clang/Basic/SPIRVTypes.def"
+
+  /// C++26 std::meta::info type.
+  PREDEF_TYPE_META_INFO_ID,
 
   /// The placeholder type for unresolved templates.
   PREDEF_TYPE_UNRESOLVED_TEMPLATE,
@@ -1179,7 +1188,7 @@ enum PredefinedTypeIDs {
 ///
 /// Type IDs for non-predefined types will start at
 /// NUM_PREDEF_TYPE_IDs.
-const unsigned NUM_PREDEF_TYPE_IDS = 530;
+const unsigned NUM_PREDEF_TYPE_IDS = 533;
 
 // Ensure we do not overrun the predefined types we reserved
 // in the enum PredefinedTypeIDs above.
